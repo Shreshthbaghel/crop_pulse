@@ -1,0 +1,10 @@
+{
+  "name": "TerraSense - AI Soil Monitor",
+  "description": "An AI-powered IoT soil monitoring platform with real-time analytics, ML-driven health classification, and automated farming recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "IoT Data Visualization",
+    "Soil Health Classification",
+    "Real-time Monitoring"
+  ]
+}

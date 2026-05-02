@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(data) { return isSignedIn() && data.userId == request.auth.uid; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // Validation helpers
+    function isValidReading(data) {
+      return data.keys().hasAll(['moisture', 'temperature', 'ec', 'classification', 'timestamp', 'userId'])
+        && data.keys().size() == 6
+        && data.moisture is number && data.moisture >= 0 && data.moisture <= 100
+        && data.temperature is number && data.temperature >= -50 && data.temperature <= 100
+        && data.ec is number && data.ec >= 0 && data.ec <= 20
+        && data.classification is string && data.classification.size() <= 50
+        && data.userId == request.auth.uid
+        && data.timestamp == request.time;
+    }
+
+    function isValidAlert(data) {
+      return data.keys().hasAll(['message', 'type', 'resolved', 'timestamp', 'userId'])
+        && data.keys().size() == 5
+        && data.message is string && data.message.size() <= 200
+        && data.type in ['Warning', 'Critical']
+        && data.resolved is bool
+        && data.userId == request.auth.uid
+        && data.timestamp == request.time;
+    }
+
+    match /readings/{readingId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isOwner(existing());
+      allow create: if isSignedIn() && isValidReading(incoming()) && isValidId(readingId);
+    }
+
+    match /alerts/{alertId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isOwner(existing());
+      allow create: if isSignedIn() && isValidAlert(incoming()) && isValidId(alertId);
+      allow update: if isSignedIn() && isOwner(existing()) 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['resolved'])
+        && incoming().resolved is bool;
+    }
+  }
+}
