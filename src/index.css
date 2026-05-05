@@ -7,20 +7,53 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   /* Natural Tones Palette */
-  --color-natural-bg: #FDFCF8;
-  --color-natural-text: #3E4231;
-  --color-natural-border: #DEDCCF;
+  --color-natural-bg:           #FDFCF8;
+  --color-natural-text:         #3E4231;
+  --color-natural-border:       #DEDCCF;
   --color-natural-border-muted: #EBE9E1;
-  --color-natural-primary: #5A5A40;
-  --color-natural-accent: #D27D56;
+  --color-natural-primary:      #5A5A40;
+  --color-natural-accent:       #D27D56;
   --color-natural-accent-muted: #BC8F8F;
-  --color-natural-dark: #3E4231;
-  
-  --animate-spin-slow: spin 8s linear infinite;
+  --color-natural-dark:         #3E4231;
+
+  /* Stress class colour tokens */
+  --color-stress-normal:      #16a34a;
+  --color-stress-drought:     #d97706;
+  --color-stress-salinity:    #dc2626;
+  --color-stress-overfert:    #ea580c;
+  --color-stress-nutrient:    #7c3aed;
+  --color-stress-heat:        #991b1b;
+
+  /* Animations */
+  --animate-spin-slow:        spin 8s linear infinite;
+  --animate-pulse-slow:       pulse 3s cubic-bezier(0.4,0,0.6,1) infinite;
+  --animate-gauge-fill:       gauge-fill 1s ease-out forwards;
 }
 
 @layer base {
   body {
     @apply bg-natural-bg text-natural-text font-sans antialiased;
   }
+
+  /* Hide scrollbar utility */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
+
+/* Gauge animation */
+@keyframes gauge-fill {
+  from { stroke-dashoffset: 314; }
+}
+
+/* Stress class badge styles */
+.stress-badge-normal    { background: #dcfce7; color: #15803d; }
+.stress-badge-drought   { background: #fef9c3; color: #a16207; }
+.stress-badge-salinity  { background: #fee2e2; color: #b91c1c; }
+.stress-badge-overfert  { background: #ffedd5; color: #c2410c; }
+.stress-badge-nutrient  { background: #ede9fe; color: #6d28d9; }
+.stress-badge-heat      { background: #fce7f3; color: #9d174d; }
+
+/* Pipeline trace step */
+.pipeline-step-done    { border-color: #16a34a; background: #f0fdf4; }
+.pipeline-step-pending { border-color: #d1d5db; background: #f9fafb; }
+.pipeline-step-error   { border-color: #dc2626; background: #fef2f2; }

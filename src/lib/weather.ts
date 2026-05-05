@@ -3,14 +3,19 @@ export async function getWeatherData(lat: number = 28.6139, lon: number = 77.209
   if (!apiKey) return null;
 
   try {
-    const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`);
+    const response = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&cnt=1`);
     const data = await response.json();
+    
+    if (!data.list || data.list.length === 0) return null;
+    
+    const current = data.list[0];
     return {
-      temp: data.main.temp,
-      humidity: data.main.humidity,
-      condition: data.weather[0].main,
-      description: data.weather[0].description,
-      rain: data.rain ? data.rain['1h'] || 0 : 0
+      temp: current.main.temp,
+      humidity: current.main.humidity,
+      condition: current.weather[0].main,
+      description: current.weather[0].description,
+      rain: current.rain ? current.rain['3h'] || 0 : 0,
+      pop: current.pop || 0 // Probability of precipitation
     };
   } catch (error) {
     console.error("Weather Fetch Error:", error);
@@ -32,8 +37,8 @@ export function predictIrrigation(soilMoisture: number, weather: any) {
   }
 
   if (soilMoisture < 30) {
-    return { status: "Irrigate Now", reason: "Moisture critical and no rain forecast" };
+    return { status: "Irrigate this morning", reason: "Soil is dry and no rain expected" };
   }
 
-  return { status: "Maintain", reason: "Soil conditions stable" };
+  return { status: "No irrigation needed today", reason: "Soil conditions stable" };
 }

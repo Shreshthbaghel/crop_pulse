@@ -5,4 +5,30 @@ coverage/
 .DS_Store
 *.log
 .env*
-!.env.example
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vite
+vite.config.ts.timestamp-*
+vite.config.js.timestamp-*
+
+# Firebase
+firebase-applet-config.json
+firebase-blueprint.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# Misc
+.eslintcache
