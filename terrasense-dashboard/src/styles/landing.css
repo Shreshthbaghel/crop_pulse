@@ -1,0 +1,77 @@
+@keyframes drift {
+  0% { transform: translate(0, 0); }
+  50% { transform: translate(30px, 15px); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
+}
+
+@keyframes ready {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-drift { animation: drift 15s ease-in-out infinite; }
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-ready { animation: ready 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+  border-right: 3px solid #B45F43;
+  margin-left: 4px;
+}
+
+@keyframes blink {
+  from, to { border-color: transparent }
+  50% { border-color: #B45F43 }
+}
+
+@keyframes packet-flow {
+  0% { transform: translateX(-100%); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateX(400%); opacity: 0; }
+}
+
+.animate-packet-flow {
+  animation: packet-flow 2s linear infinite;
+}
+
+@keyframes border-glow {
+  0%, 100% { border-color: transparent; }
+  50% { border-color: rgba(180, 95, 67, 0.2); }
+}
+
+.animate-border-glow {
+  animation: border-glow 4s ease-in-out infinite;
+}
+
+@keyframes draw-underline {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+.animate-draw-underline {
+  animation: draw-underline 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-ticker {
+  display: inline-flex;
+  animation: ticker 30s linear infinite;
+}
+
+.bg-soil-texture {
+  background-image: 
+    radial-gradient(#242D28 1px, transparent 1px),
+    radial-gradient(#242D28 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 0, 20px 20px;
+}
