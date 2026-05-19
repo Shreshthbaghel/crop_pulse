@@ -48,7 +48,8 @@ export default function Recommendations() {
       setLatestReading(reading)
 
       if (prof?.soil_type && reading) {
-        const response = await fetch('http://localhost:8000/predict/fertilizer', {
+        const aiServerUrl = import.meta.env.VITE_AI_SERVER_URL || 'http://localhost:8000';
+        const response = await fetch(`${aiServerUrl}/predict/fertilizer`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
