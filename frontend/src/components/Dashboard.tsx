@@ -90,7 +90,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onLogout, user }: DashboardProps) {
-  const { isSimulating, toggleSimulation, triggerScenario, weather, lastTrace, lastInjectedScenario } = useSimulation();
+  const { isSimulating, toggleSimulation, triggerScenario, weather, lastTrace, lastInjectedScenario, latestLocalReading } = useSimulation();
   const isDevMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("devmode") === "true";
   const [readings, setReadings] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -130,6 +130,18 @@ export function Dashboard({ onLogout, user }: DashboardProps) {
     }, 2000);
     return () => clearTimeout(timer);
   }, [readings.length, isSimulating, toggleSimulation, isDevMode]);
+
+  // Merge locally simulated readings into the Home dashboard (works without Supabase)
+  useEffect(() => {
+    if (!latestLocalReading) return;
+    const formatted = {
+      ...latestLocalReading,
+      chartTime: new Date(latestLocalReading.created_at).getTime(),
+      displayTime: format(new Date(latestLocalReading.created_at), "HH:mm"),
+    };
+    setReadings((prev) => [formatted, ...prev].slice(0, 30));
+    getMLPrediction(formatted);
+  }, [latestLocalReading]);
 
   useEffect(() => {
     if (!user) return;
@@ -1487,7 +1499,17 @@ export function Dashboard({ onLogout, user }: DashboardProps) {
               </motion.div>
             )}
 
-            {activeTab !== "overview" && activeTab !== "analytics" && activeTab !== "alerts" && activeTab !== "history" && activeTab !== "advisor" && activeTab !== "simulation" && (
+            {![
+              "overview",
+              "analytics",
+              "alerts",
+              "irrigation",
+              "reports",
+              "history",
+              "live",
+              "advisor",
+              "simulation",
+            ].includes(activeTab) && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-40 border-2 border-dashed border-natural-border rounded-3xl">
                 <h3 className="text-3xl font-serif italic text-natural-primary opacity-20 mb-4 capitalize">{activeTab} Module</h3>
                 <p className="text-[10px] font-mono uppercase tracking-widest opacity-40 italic">Coming soon to Phase 2 of CropPulse</p>

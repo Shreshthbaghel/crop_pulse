@@ -1,12 +1,16 @@
 import twilio from "twilio";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import "dotenv/config";
 
 // Initialize Supabase (Service Role for admin access to profiles)
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabase: SupabaseClient | null =
+  supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+
+if (!supabase) {
+  console.warn("[Twilio] Supabase not configured — SMS profile lookups disabled.");
+}
 
 // Initialize Twilio
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
@@ -23,6 +27,11 @@ const client = (TWILIO_SID && TWILIO_TOKEN) ? twilio(TWILIO_SID, TWILIO_TOKEN) :
 export async function sendSMSNotification(userId: string, message: string) {
   if (!client || !TWILIO_PHONE) {
     console.warn("[Twilio] Service not configured. Skipping SMS.");
+    return;
+  }
+
+  if (!supabase) {
+    console.warn("[Twilio] Supabase not configured. Skipping SMS.");
     return;
   }
 

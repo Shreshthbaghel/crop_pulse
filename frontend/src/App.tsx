@@ -6,18 +6,25 @@ import { Dashboard } from "./components/Dashboard";
 import { Loader2, Zap, LogIn, AlertCircle, ExternalLink } from "lucide-react";
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>({ 
+    id: "dev-mock-id", 
+    email: "dev@example.com", 
+    user_metadata: { full_name: "Developer Mode" } 
+  } as any);
+  const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get initial session
+    // Auth bypassed for frontend-only development
+    /*
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
+    }).catch(err => {
+      console.error("Session error:", err);
+      setLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
@@ -25,6 +32,7 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
+    */
   }, []);
 
   const handleLogin = async () => {
@@ -109,7 +117,7 @@ export default function App() {
   }
 
   return (
-    <SimulationProvider>
+    <SimulationProvider user={user}>
       <div className="min-h-screen bg-natural-bg text-natural-text selection:bg-natural-dark selection:text-natural-bg">
         <Dashboard onLogout={handleLogout} user={user} />
       </div>

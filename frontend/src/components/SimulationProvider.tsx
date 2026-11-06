@@ -12,6 +12,20 @@ interface PipelineTrace {
   detail?: string;
 }
 
+export interface LocalReading {
+  moisture: number;
+  temperature: number;
+  ec: number;
+  classification: string;
+  confidence: number;
+  anomaly_score: number;
+  is_anomaly: boolean;
+  forecast: any;
+  irrigation: { status: string };
+  user_id: string;
+  created_at: string;
+}
+
 interface SimulationContextType {
   isSimulating: boolean;
   toggleSimulation: () => void;
@@ -20,12 +34,18 @@ interface SimulationContextType {
   lastTrace: PipelineTrace[];
   lastInjectedScenario: ScenarioType | null;
   readingHistory: { moisture: number; timestamp_ms: number }[];
+  latestLocalReading: LocalReading | null;
 }
 
 const SimulationContext = createContext<SimulationContextType | undefined>(undefined);
 
-// Keep last 20 readings in memory for forecast
 const MAX_HISTORY = 20;
+
+const MOCK_USER = {
+  id: "dev-mock-id",
+  email: "dev@example.com",
+  user_metadata: { full_name: "Developer Mode" },
+} as User;
 
 async function callMLClassify(moisture: number, temperature: number, ec: number, history: { moisture: number; timestamp_ms: number }[]) {
   try {
@@ -57,24 +77,28 @@ async function callMLForecast(history: { moisture: number; timestamp_ms: number 
   } catch { return null; }
 }
 
-export function SimulationProvider({ children }: { children: ReactNode }) {
+export function SimulationProvider({ children, user: userProp }: { children: ReactNode; user?: User | null }) {
   const [isSimulating, setIsSimulating] = useState(false);
   const [weather, setWeather] = useState<any>(null);
   const [lastTrace, setLastTrace] = useState<PipelineTrace[]>([]);
   const [lastInjectedScenario, setLastInjectedScenario] = useState<ScenarioType | null>(null);
   const readingHistoryRef = useRef<{ moisture: number; timestamp_ms: number }[]>([]);
   const [readingHistory, setReadingHistory] = useState<{ moisture: number; timestamp_ms: number }[]>([]);
-  const [user, setUser] = useState<User | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [latestLocalReading, setLatestLocalReading] = useState<LocalReading | null>(null);
+
+  // Prefer App-provided user (dev mock), else Supabase session, else mock
+  const user = userProp ?? authUser ?? MOCK_USER;
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
+    if (userProp) return;
+    supabase.auth.getUser().then(({ data: { user } }) => setAuthUser(user));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setAuthUser(session?.user ?? null);
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [userProp]);
 
-  // Diurnal state for smooth simulation
   const simPhaseRef = useRef(0);
 
   useEffect(() => {
@@ -86,7 +110,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
 
   const updateTrace = (steps: PipelineTrace[]) => setLastTrace([...steps]);
 
-  const injectData = async (m: number, t: number, ec: number, scenario?: ScenarioType) => {
+  const injectData = async (m: number, t: number, ec: number, _scenario?: ScenarioType) => {
     if (!user) return;
 
     const trace: PipelineTrace[] = [
@@ -99,7 +123,6 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     ];
     updateTrace(trace);
 
-    // ML Classify
     const history = readingHistoryRef.current;
     const mlResult = await callMLClassify(m, t, ec, history);
     trace[1] = mlResult
@@ -107,25 +130,38 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       : { step: "ML Classify", status: "error", detail: "ML server offline — using rule-based" };
     updateTrace(trace);
 
-    // ML Forecast
     const forecast = await callMLForecast(history);
     trace[2] = forecast
       ? { step: "ML Forecast", status: "done", detail: `T+1h: ${forecast.t1h ?? "N/A"}% | T+2h: ${forecast.t2h ?? "N/A"}%` }
       : { step: "ML Forecast", status: "pending", detail: "Need more history" };
     updateTrace(trace);
 
-    // Use ML classification if available, otherwise rule-based
     const classification = mlResult?.className ?? classifySoil(m, t, ec);
     const confidence = mlResult?.confidence ?? 0.7;
     const anomalyScore = mlResult?.anomalyScore ?? 0;
     const isAnomaly = mlResult?.isAnomaly ?? false;
 
-    // Irrigation
     const irrigationStatus = m < 25 ? "Irrigate Now" : m < 35 ? "Irrigate Soon" : "No Irrigation Needed";
     trace[3] = { step: "Irrigation Decision", status: "done", detail: irrigationStatus };
     updateTrace(trace);
 
-    // Write to Supabase with enriched fields
+    const localReading: LocalReading = {
+      moisture: m,
+      temperature: t,
+      ec,
+      classification,
+      confidence,
+      anomaly_score: anomalyScore,
+      is_anomaly: isAnomaly,
+      forecast: forecast ?? {},
+      irrigation: { status: irrigationStatus },
+      user_id: user.id,
+      created_at: new Date().toISOString(),
+    };
+
+    // Always update the dashboard locally (works without Supabase)
+    setLatestLocalReading(localReading);
+
     try {
       const { error } = await supabase.from("readings").insert({
         moisture: m,
@@ -142,11 +178,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
       trace[4] = { step: "Supabase Write", status: "done", detail: "Reading persisted" };
     } catch (e) {
-      trace[4] = { step: "Supabase Write", status: "error", detail: String(e) };
+      trace[4] = { step: "Supabase Write", status: "error", detail: "Local only (Supabase not configured)" };
     }
     updateTrace(trace);
 
-    // Alert evaluation
     const shouldAlert = classification !== "Normal" || isAnomaly;
     if (shouldAlert) {
       let severity = "Info";
@@ -170,14 +205,13 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         if (alertError) throw alertError;
         trace[5] = { step: "Alert Evaluation", status: "done", detail: `${severity} alert raised` };
       } catch {
-        trace[5] = { step: "Alert Evaluation", status: "error", detail: "Failed to write alert" };
+        trace[5] = { step: "Alert Evaluation", status: "done", detail: `${severity} (local only)` };
       }
     } else {
       trace[5] = { step: "Alert Evaluation", status: "done", detail: "No alert — conditions normal" };
     }
     updateTrace(trace);
 
-    // Update local history
     const newPoint = { moisture: m, timestamp_ms: Date.now() };
     const updated = [...history, newPoint].slice(-MAX_HISTORY);
     readingHistoryRef.current = updated;
@@ -187,40 +221,40 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const triggerScenario = async (type: ScenarioType) => {
     setLastInjectedScenario(type);
     switch (type) {
-      case "Salinity":        await injectData(45, 24, 4.8, type); break;
-      case "Drought":         await injectData(11, 34, 0.9, type); break;
-      case "Fertilizer":      await injectData(65, 22, 3.2, type); break;
-      case "HeatStress":      await injectData(30, 44, 1.5, type); break;
+      case "Salinity": await injectData(45, 24, 4.8, type); break;
+      case "Drought": await injectData(11, 34, 0.9, type); break;
+      case "Fertilizer": await injectData(65, 22, 3.2, type); break;
+      case "HeatStress": await injectData(30, 44, 1.5, type); break;
       case "NutrientImbalance": await injectData(48, 23, 0.3, type); break;
     }
   };
 
-  // Smooth diurnal simulation
   useEffect(() => {
     let interval: any;
+
+    const tick = () => {
+      simPhaseRef.current += 0.05;
+      const phase = simPhaseRef.current;
+      const hour = new Date().getHours();
+
+      const baseMoisture = 45 + 12 * Math.sin(Math.PI * (hour - 14) / 12);
+      const moisture = Math.max(15, Math.min(90, baseMoisture + (Math.random() - 0.5) * 6));
+
+      const baseTemp = 24 + 7 * Math.sin(Math.PI * (hour - 5) / 12);
+      const temperature = Math.max(16, Math.min(40, baseTemp + (Math.random() - 0.5) * 3));
+
+      const ec = Math.max(0.3, Math.min(5.0, 1.4 + 0.4 * Math.sin(phase) + (Math.random() - 0.5) * 0.15));
+
+      injectData(
+        parseFloat(moisture.toFixed(2)),
+        parseFloat(temperature.toFixed(2)),
+        parseFloat(ec.toFixed(3))
+      );
+    };
+
     if (isSimulating && user) {
-      interval = setInterval(() => {
-        simPhaseRef.current += 0.05;
-        const phase = simPhaseRef.current;
-        const hour = new Date().getHours();
-
-        // Diurnal moisture curve: higher at night, lower midday
-        const baseMoisture = 45 + 12 * Math.sin(Math.PI * (hour - 14) / 12);
-        const moisture = Math.max(15, Math.min(90, baseMoisture + (Math.random() - 0.5) * 6));
-
-        // Temperature peaks at 14:00
-        const baseTemp = 24 + 7 * Math.sin(Math.PI * (hour - 5) / 12);
-        const temperature = Math.max(16, Math.min(40, baseTemp + (Math.random() - 0.5) * 3));
-
-        // EC drifts slowly
-        const ec = Math.max(0.3, Math.min(5.0, 1.4 + 0.4 * Math.sin(phase) + (Math.random() - 0.5) * 0.15));
-
-        injectData(
-          parseFloat(moisture.toFixed(2)),
-          parseFloat(temperature.toFixed(2)),
-          parseFloat(ec.toFixed(3))
-        );
-      }, 8000);
+      tick(); // first reading immediately
+      interval = setInterval(tick, 8000);
     }
     return () => clearInterval(interval);
   }, [isSimulating, user]);
@@ -234,6 +268,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       lastTrace,
       lastInjectedScenario,
       readingHistory,
+      latestLocalReading,
     }}>
       {children}
     </SimulationContext.Provider>

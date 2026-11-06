@@ -23,7 +23,10 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
   console.warn("[Supabase] Warning: URL or Service Role Key missing from environment.");
 }
 
-const supabase = createClient(SUPABASE_URL || "", SUPABASE_SERVICE_ROLE || "");
+const supabase = createClient(
+  SUPABASE_URL || "https://placeholder.supabase.co",
+  SUPABASE_SERVICE_ROLE || "placeholder-key"
+);
 
 const CLASS_NAMES = [
   "Normal",
@@ -344,8 +347,8 @@ async function startServer() {
   console.log(`[MQTT] Connecting to ${mqttBrokerUrl}...`);
   
   const mqttClient = mqtt.connect(mqttBrokerUrl, {
-    username: process.env.HIVEMQ_USERNAME,
-    password: process.env.HIVEMQ_PASSWORD,
+    username: process.env.HIVEMQ_USERNAME || process.env.VITE_HIVEMQ_USERNAME,
+    password: process.env.HIVEMQ_PASSWORD || process.env.VITE_HIVEMQ_PASSWORD,
   });
 
   globalMqttClient = mqttClient;
@@ -463,14 +466,16 @@ async function startServer() {
   });
 
   // ── Vite / Static ───────────────────────────────────────────────────────
-  if (process.env.NODE_ENV !== "production") {
+  // Only embed Vite when explicitly requested. Running frontend separately on
+  // :5173 avoids tsx watch restart loops from Vite temp files.
+  if (process.env.SERVE_FRONTEND === "true") {
     const vite = await createViteServer({
       root: path.join(__dirname, "../frontend"),
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (process.env.NODE_ENV === "production") {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (_req, res) => res.sendFile(path.join(distPath, "index.html")));

@@ -50,83 +50,97 @@ export function IoTSensorPanel() {
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [latest, setLatest] = useState<SensorReading>({ tds: 0, ec: 0, moisture: 0, created_at: "" });
   const [status, setStatus] = useState<"Connecting" | "Connected" | "Disconnected" | "Error">("Connecting");
+  const [statusDetail, setStatusDetail] = useState<string>("");
   const clientRef = useRef<ReturnType<typeof mqtt.connect> | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-    
-    const host = import.meta.env.VITE_HIVEMQ_HOST;
-    const username = import.meta.env.VITE_HIVEMQ_USERNAME;
-    const password = import.meta.env.VITE_HIVEMQ_PASSWORD;
+    let cancelled = false;
+
+    const host = import.meta.env.VITE_HIVEMQ_HOST as string | undefined;
+    const username = import.meta.env.VITE_HIVEMQ_USERNAME as string | undefined;
+    const password = import.meta.env.VITE_HIVEMQ_PASSWORD as string | undefined;
 
     if (!host || !username || !password) {
-      console.error("[HiveMQ] Missing credentials in .env");
+      console.error("[HiveMQ] Missing credentials in .env — restart Vite after editing .env");
       setStatus("Error");
+      setStatusDetail("Missing VITE_HIVEMQ_* in frontend/.env (restart npm run dev)");
       return;
     }
 
-    // Only connect if we don't already have a client
-    if (clientRef.current) return;
+    // Defer connect so React Strict Mode's immediate unmount doesn't abort a live socket
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
 
-    console.log("[HiveMQ] Connecting to", host);
-    const client = mqtt.connect(`wss://${host}:8884/mqtt`, {
-      username,
-      password,
-      clientId: "CropPulse_ui_" + Math.random().toString(16).substr(2, 8),
-      reconnectPeriod: 3000,
-      connectTimeout: 5000,
-      clean: true,
-    });
+      const url = `wss://${host}:8884/mqtt`;
+      console.log("[HiveMQ] Connecting to", url);
+      setStatus("Connecting");
+      setStatusDetail(host);
 
-    clientRef.current = client;
+      const client = mqtt.connect(url, {
+        username,
+        password,
+        clientId: "CropPulse_ui_" + Math.random().toString(16).slice(2, 10),
+        reconnectPeriod: 4000,
+        connectTimeout: 15000,
+        clean: true,
+        protocolVersion: 4,
+      });
 
-    client.on("connect", () => {
-      if (!isMounted) {
-        client.end(true);
-        return;
-      }
-      console.log("[HiveMQ] Connection established");
-      setStatus("Connected");
-      
-      // Check if we are still connected before subscribing
-      if (client.connected) {
-        client.subscribe("farm/data", (err) => {
+      clientRef.current = client;
+
+      client.on("connect", () => {
+        if (cancelled) return;
+        console.log("[HiveMQ] Connection established");
+        setStatus("Connected");
+        setStatusDetail("farm/data");
+        client.subscribe("farm/data", { qos: 1 }, (err) => {
           if (err) console.error("[HiveMQ] Subscription error:", err);
           else console.log("[HiveMQ] Subscribed to farm/data");
         });
-      }
-    });
+      });
 
-    client.on("message", (topic, message) => {
-      if (!isMounted) return;
-      try {
-        const data = JSON.parse(message.toString());
-        const reading: SensorReading = {
-          tds: data.tds || 0,
-          ec: data.ec || 0,
-          moisture: data.moisture || 0,
-          created_at: new Date().toISOString(),
-        };
-        setLatest(reading);
-        setReadings(prev => [...prev.slice(-49), reading]);
-      } catch (e) {
-        console.error("[HiveMQ] Message parse error:", e);
-      }
-    });
+      client.on("message", (_topic, message) => {
+        if (cancelled) return;
+        try {
+          const data = JSON.parse(message.toString());
+          const reading: SensorReading = {
+            tds: data.tds || 0,
+            ec: data.ec || 0,
+            moisture: data.moisture || 0,
+            created_at: new Date().toISOString(),
+          };
+          setLatest(reading);
+          setReadings((prev) => [...prev.slice(-49), reading]);
+        } catch (e) {
+          console.error("[HiveMQ] Message parse error:", e);
+        }
+      });
 
-    client.on("error", (err) => {
-      console.error("[HiveMQ] MQTT Error:", err);
-      if (isMounted) setStatus("Error");
-    });
+      client.on("error", (err) => {
+        console.error("[HiveMQ] MQTT Error:", err);
+        if (cancelled) return;
+        setStatus("Error");
+        setStatusDetail(err?.message || "MQTT connection failed");
+      });
 
-    client.on("close", () => {
-      if (isMounted) setStatus("Disconnected");
-    });
+      client.on("reconnect", () => {
+        if (cancelled) return;
+        setStatus("Connecting");
+        setStatusDetail("Reconnecting…");
+      });
+
+      client.on("close", () => {
+        if (cancelled) return;
+        setStatus((prev) => (prev === "Connected" ? "Disconnected" : prev));
+      });
+    }, 100);
 
     return () => {
-      isMounted = false;
+      cancelled = true;
+      window.clearTimeout(timer);
       if (clientRef.current) {
         console.log("[HiveMQ] Disconnecting client");
+        clientRef.current.removeAllListeners();
         clientRef.current.end(true);
         clientRef.current = null;
       }
@@ -157,6 +171,7 @@ export function IoTSensorPanel() {
             <p className="font-semibold">Waiting for sensor data…</p>
             <p className="text-[11px] opacity-60 font-mono mt-1">
               Listening on topic: <code>farm/data</code>
+              {status === "Error" && statusDetail ? ` — ${statusDetail}` : ""}
             </p>
           </div>
         </div>
